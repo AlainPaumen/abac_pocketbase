@@ -158,8 +158,8 @@ const PermissionsPage = () => {
       setHasCondition(permission.hasCondition || false);
       
       // Find condition code ID from the code string
-      if (permission.hasCondition && permission.conditionCode) {
-        const conditionCode = conditionCodes.find(cc => cc.id === permission.conditionCode);
+      if (permission.hasCondition && permission.conditionCodeId) {
+        const conditionCode = conditionCodes.find(cc => cc.id === permission.conditionCodeId);
         if (conditionCode) {
           setSelectedConditionCodeId(conditionCode.id);
         } else if (conditionCodes.length > 0) {
@@ -246,7 +246,7 @@ const PermissionsPage = () => {
         actionId: selectedActionId,
         hasPermission: hasPermission,
         hasCondition: hasCondition,
-        conditionCode: hasCondition ? selectedConditionCodeId : ''
+        conditionCodeId: hasCondition ? selectedConditionCodeId : ''
       };
 
       if (dialogMode === 'create') {
@@ -537,12 +537,12 @@ const PermissionsPage = () => {
                             <Tooltip>
                               <TooltipTrigger asChild>
                                 <span className="text-blue-600 font-medium flex items-center gap-1 cursor-help">
-                                  {getConditionCodeName(permission.conditionCode || '')}
+                                  {getConditionCodeName(permission.conditionCodeId || '')}
                                   <FiInfo className="h-3 w-3 text-muted-foreground" />
                                 </span>
                               </TooltipTrigger>
                               <TooltipContent className="max-w-xs">
-                                <p>{getConditionCodeDescription(permission.conditionCode || '')}</p>
+                                <p>{getConditionCodeDescription(permission.conditionCodeId || '')}</p>
                               </TooltipContent>
                             </Tooltip>
                           </TooltipProvider>

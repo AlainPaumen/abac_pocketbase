@@ -108,7 +108,7 @@ export type PermConditioncodesRecord = {
 
 export type PermPermissionsRecord = {
 	actionId: RecordIdString
-	conditionCode?: string
+	conditionCodeId?: RecordIdString
 	created?: IsoDateString
 	hasCondition?: boolean
 	hasPermission?: boolean
