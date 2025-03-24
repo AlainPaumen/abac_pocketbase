@@ -1,0 +1,45 @@
+# Windsurf Rules
+
+## General Code Style & Formatting
+
+- Use PascalCase for React component file names (e.g., UserCard.tsx, not user-card.tsx).
+- Prefer named exports for components.
+
+## Project Structure & Architecture
+
+- Use Tanstack Router for routing.
+- We're using only client side.
+
+## Styling & UI
+
+- Use Tailwind CSS for styling.
+- Use Shadcn UI for components.
+
+## Data Fetching & Forms
+
+- Use TanStack Query (react-query) for frontend data fetching.
+- Use React Hook Form for form handling.
+- Form controls are defined in @/components/form
+- Use Zod for validation.
+
+## State Management & Logic
+
+- Use Zustand for state management.
+
+## Backend & Database
+
+- Database is pocketbase v0.26.1
+
+## Testing
+
+- Use vitest for testing.
+
+## Frontend
+
+- Use React 19
+- Typescript
+
+## abac
+
+- collections starting with 'Perm' are used in the management of the abac functionality
+- pocketbase instance runs default on <http://127.0.0.1:8090>
