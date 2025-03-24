@@ -3,7 +3,7 @@ import { usePocketBase } from '@/contexts/PocketBaseContext';
 import { Layout } from '@/components/Layout';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
-import { FiPlus, FiEdit2, FiTrash2, FiChevronUp, FiChevronDown, FiFilter } from 'react-icons/fi';
+import { FiPlus, FiTrash2, FiChevronUp, FiChevronDown, FiFilter } from 'react-icons/fi';
 import { useToast } from '@/components/ui/use-toast';
 import { 
   PermActionsRecord, 
@@ -31,8 +31,6 @@ const ActionsPage = () => {
   const [resources, setResources] = useState<PermResourcesResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [openDialog, setOpenDialog] = useState(false);
-  const [dialogMode, setDialogMode] = useState<'create' | 'edit'>('create');
-  const [currentAction, setCurrentAction] = useState<PermActionsRecord | null>(null);
   const [actionName, setActionName] = useState('');
   const [customActions, setCustomActions] = useState<string[]>([]);
   const [selectedResourceId, setSelectedResourceId] = useState('');
@@ -89,22 +87,11 @@ const ActionsPage = () => {
     loadData();
   }, [pb]);
 
-  const handleOpenDialog = (mode: 'create' | 'edit', action?: PermActionsResponse) => {
-    setDialogMode(mode);
-    if (mode === 'edit' && action) {
-      setCurrentAction(action);
-      setActionName(action.name);
-      setSelectedResourceId(action.resourceId);
-      // For edit mode, we don't use the standard actions checkboxes
-      setSelectedStandardActions([]);
-      setCustomActions([]);
-    } else {
-      setCurrentAction(null);
-      setActionName('');
-      setSelectedStandardActions([]);
-      setCustomActions([]);
-      setSelectedResourceId(resources.length > 0 ? resources[0].id : '');
-    }
+  const handleOpenDialog = () => {
+    setActionName('');
+    setSelectedStandardActions([]);
+    setCustomActions([]);
+    setSelectedResourceId(resources.length > 0 ? resources[0].id : '');
     setOpenDialog(true);
   };
 
@@ -150,60 +137,38 @@ const ActionsPage = () => {
         return;
       }
 
-      if (dialogMode === 'edit') {
-        // For edit mode, we just update the current action
-        if (!actionName.trim()) {
-          toast({
-            title: "Validation Error",
-            description: "Action name cannot be empty",
-            variant: "destructive"
-          });
-          return;
-        }
-
-        await pb.collection('perm_actions').update(currentAction!.id, {
-          name: actionName,
+      // For create mode, we create multiple actions based on selections
+      const actionsToCreate = [
+        // Add all selected standard actions
+        ...selectedStandardActions.map(actionId => ({
+          name: actionId,
           resourceId: selectedResourceId
-        });
-        
+        })),
+        // Add all custom actions
+        ...customActions.map(name => ({
+          name,
+          resourceId: selectedResourceId
+        }))
+      ];
+
+      if (actionsToCreate.length === 0) {
         toast({
-          title: "Success",
-          description: "Action updated successfully"
+          title: "Validation Error",
+          description: "Please select at least one action or add a custom action",
+          variant: "destructive"
         });
-      } else {
-        // For create mode, we create multiple actions based on selections
-        const actionsToCreate = [
-          // Add all selected standard actions
-          ...selectedStandardActions.map(actionId => ({
-            name: actionId,
-            resourceId: selectedResourceId
-          })),
-          // Add all custom actions
-          ...customActions.map(name => ({
-            name,
-            resourceId: selectedResourceId
-          }))
-        ];
-
-        if (actionsToCreate.length === 0) {
-          toast({
-            title: "Validation Error",
-            description: "Please select at least one action or add a custom action",
-            variant: "destructive"
-          });
-          return;
-        }
-
-        // Create all actions
-        for (const action of actionsToCreate) {
-          await pb.collection('perm_actions').create(action);
-        }
-
-        toast({
-          title: "Success",
-          description: `${actionsToCreate.length} action(s) created successfully`
-        });
+        return;
       }
+
+      // Create all actions
+      for (const action of actionsToCreate) {
+        await pb.collection('perm_actions').create(action);
+      }
+      
+      toast({
+        title: "Success",
+        description: `${actionsToCreate.length} action(s) created successfully`
+      });
       
       handleCloseDialog();
       fetchActions();
@@ -218,23 +183,13 @@ const ActionsPage = () => {
   };
 
   const handleDeleteAction = async (id: string) => {
-    if (window.confirm('Are you sure you want to delete this action? This will also delete all associated permissions.')) {
+    if (window.confirm('Are you sure you want to delete this action? This may break existing permissions.')) {
       try {
-        // First, delete all permissions associated with this action
-        const permissions = await pb.collection('perm_permissions').getFullList({
-          filter: `actionId = "${id}"`
-        });
-        
-        for (const permission of permissions) {
-          await pb.collection('perm_permissions').delete(permission.id);
-        }
-        
-        // Then delete the action
         await pb.collection('perm_actions').delete(id);
         
         toast({
           title: "Success",
-          description: "Action and associated permissions deleted successfully"
+          description: "Action deleted successfully"
         });
         
         fetchActions();
@@ -253,20 +208,8 @@ const ActionsPage = () => {
     const resource = resources.find(r => r.id === resourceId);
     return resource ? resource.name : 'Unknown Resource';
   };
-
-  // Sorting functions
-  const handleSort = (field: SortField) => {
-    if (sortField === field) {
-      // Toggle direction if clicking the same field
-      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
-    } else {
-      // Set new field and default to ascending
-      setSortField(field);
-      setSortDirection('asc');
-    }
-  };
-
-  // Get filtered and sorted actions
+  
+  // Sorting and filtering functions
   const getFilteredAndSortedActions = () => {
     if (!actions.length) return [];
     
@@ -279,18 +222,30 @@ const ActionsPage = () => {
     return [...filteredActions].sort((a, b) => {
       let comparison = 0;
       
-      if (sortField === 'name') {
-        comparison = a.name.localeCompare(b.name);
-      } else if (sortField === 'resource') {
-        const resourceNameA = getResourceName(a.resourceId);
-        const resourceNameB = getResourceName(b.resourceId);
-        comparison = resourceNameA.localeCompare(resourceNameB);
+      switch (sortField) {
+        case 'name':
+          comparison = a.name.localeCompare(b.name);
+          break;
+        case 'resource':
+          comparison = getResourceName(a.resourceId).localeCompare(getResourceName(b.resourceId));
+          break;
       }
       
       return sortDirection === 'asc' ? comparison : -comparison;
     });
   };
-
+  
+  const handleSort = (field: SortField) => {
+    if (sortField === field) {
+      // Toggle direction if clicking the same field
+      setSortDirection(sortDirection === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new field and default to ascending
+      setSortField(field);
+      setSortDirection('asc');
+    }
+  };
+  
   const renderSortIcon = (field: SortField) => {
     if (sortField !== field) {
       return <span className="text-gray-300 ml-1"><FiChevronUp className="h-4 w-4 inline" /></span>;
@@ -310,7 +265,7 @@ const ActionsPage = () => {
       <div className="space-y-6">
         <div className="flex justify-between items-center">
           <h1 className="text-3xl font-bold tracking-tight">Actions</h1>
-          <Button onClick={() => handleOpenDialog('create')} className="flex items-center gap-2">
+          <Button onClick={() => handleOpenDialog()} className="flex items-center gap-2">
             <FiPlus className="h-4 w-4" />
             <span>Add Action</span>
           </Button>
@@ -405,14 +360,6 @@ const ActionsPage = () => {
                           <Button 
                             variant="outline" 
                             size="icon" 
-                            onClick={() => handleOpenDialog('edit', action)}
-                          >
-                            <FiEdit2 className="h-4 w-4" />
-                            <span className="sr-only">Edit</span>
-                          </Button>
-                          <Button 
-                            variant="outline" 
-                            size="icon" 
                             onClick={() => handleDeleteAction(action.id)}
                           >
                             <FiTrash2 className="h-4 w-4" />
@@ -433,12 +380,10 @@ const ActionsPage = () => {
             <div className="fixed left-[50%] top-[50%] z-50 grid w-full max-w-lg translate-x-[-50%] translate-y-[-50%] gap-4 border bg-background p-6 shadow-lg duration-200 sm:rounded-lg">
               <div className="flex flex-col space-y-1.5 text-center sm:text-left">
                 <h2 className="text-lg font-semibold leading-none tracking-tight">
-                  {dialogMode === 'create' ? 'Create Action' : 'Edit Action'}
+                  Create Action
                 </h2>
                 <p className="text-sm text-muted-foreground">
-                  {dialogMode === 'create' 
-                    ? 'Add new actions to your system' 
-                    : 'Modify the existing action'}
+                  Add new actions to your system
                 </p>
               </div>
               <div className="grid gap-4 py-4">
@@ -464,97 +409,82 @@ const ActionsPage = () => {
                   </select>
                 </div>
 
-                {dialogMode === 'create' ? (
-                  <>
-                    <div className="grid gap-2">
-                      <label className="text-sm font-medium leading-none">
-                        Standard Actions
-                      </label>
-                      <div className="grid grid-cols-2 gap-2">
-                        {STANDARD_ACTIONS.map((action) => (
-                          <div key={action.id} className="flex items-center space-x-2">
-                            <Checkbox 
-                              id={`std-action-${action.id}`} 
-                              checked={selectedStandardActions.includes(action.id)}
-                              onCheckedChange={(checked) => 
-                                handleStandardActionToggle(action.id, checked === true)
-                              }
-                            />
-                            <label
-                              htmlFor={`std-action-${action.id}`}
-                              className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium leading-none">
+                    Standard Actions
+                  </label>
+                  <div className="grid grid-cols-2 gap-2">
+                    {STANDARD_ACTIONS.map((action) => (
+                      <div key={action.id} className="flex items-center space-x-2">
+                        <Checkbox 
+                          id={`std-action-${action.id}`} 
+                          checked={selectedStandardActions.includes(action.id)}
+                          onCheckedChange={(checked) => 
+                            handleStandardActionToggle(action.id, checked === true)
+                          }
+                        />
+                        <label
+                          htmlFor={`std-action-${action.id}`}
+                          className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                        >
+                          {action.label}
+                        </label>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="grid gap-2">
+                  <label className="text-sm font-medium leading-none">
+                    Custom Actions
+                  </label>
+                  <div className="space-y-2">
+                    <div className="flex gap-2">
+                      <input
+                        className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                        placeholder="Enter custom action name"
+                        value={actionName}
+                        onChange={(e) => setActionName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddCustomAction();
+                          }
+                        }}
+                      />
+                      <Button 
+                        variant="outline" 
+                        onClick={handleAddCustomAction}
+                      >
+                        Add
+                      </Button>
+                    </div>
+                    
+                    {customActions.length > 0 && (
+                      <div className="mt-2 space-y-1">
+                        {customActions.map((action, index) => (
+                          <div key={index} className="flex items-center justify-between p-2 bg-muted rounded-md">
+                            <span className="text-sm">{action}</span>
+                            <Button 
+                              variant="ghost" 
+                              size="sm" 
+                              onClick={() => handleRemoveCustomAction(index)}
                             >
-                              {action.label}
-                            </label>
+                              <FiTrash2 className="h-4 w-4" />
+                            </Button>
                           </div>
                         ))}
                       </div>
-                    </div>
-
-                    <div className="grid gap-2">
-                      <label className="text-sm font-medium leading-none">
-                        Custom Actions
-                      </label>
-                      <div className="space-y-2">
-                        <div className="flex gap-2">
-                          <input
-                            className="flex-1 h-10 rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            value={actionName}
-                            onChange={(e) => setActionName(e.target.value)}
-                            placeholder="Enter custom action name"
-                          />
-                          <Button 
-                            type="button" 
-                            onClick={handleAddCustomAction}
-                            disabled={!actionName.trim()}
-                          >
-                            Add
-                          </Button>
-                        </div>
-                        
-                        {customActions.length > 0 && (
-                          <div className="mt-2 space-y-1">
-                            <p className="text-sm font-medium">Custom actions to be created:</p>
-                            <ul className="space-y-1">
-                              {customActions.map((action, index) => (
-                                <li key={index} className="flex items-center justify-between bg-muted p-2 rounded-md">
-                                  <span>{action}</span>
-                                  <Button 
-                                    variant="ghost" 
-                                    size="sm" 
-                                    onClick={() => handleRemoveCustomAction(index)}
-                                  >
-                                    <FiTrash2 className="h-4 w-4" />
-                                  </Button>
-                                </li>
-                              ))}
-                            </ul>
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  </>
-                ) : (
-                  <div className="grid gap-2">
-                    <label htmlFor="name" className="text-sm font-medium leading-none">
-                      Action Name
-                    </label>
-                    <input
-                      id="name"
-                      className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                      value={actionName}
-                      onChange={(e) => setActionName(e.target.value)}
-                      placeholder="Enter action name"
-                    />
+                    )}
                   </div>
-                )}
+                </div>
               </div>
-              <div className="flex flex-col-reverse sm:flex-row sm:justify-end sm:space-x-2">
+              <div className="flex justify-end gap-2">
                 <Button variant="outline" onClick={handleCloseDialog}>
                   Cancel
                 </Button>
                 <Button onClick={handleSaveAction}>
-                  {dialogMode === 'create' ? 'Create' : 'Save Changes'}
+                  Create
                 </Button>
               </div>
             </div>
